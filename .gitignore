@@ -1,0 +1,47 @@
+# Python compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+
+# Build and package folders (EXCLUDED - won't be committed!)
+dist/
+build/
+*.egg-info/
+
+# Virtual environments (EXCLUDED - won't be committed!)
+.venv/
+venv/
+ENV/
+env/
+
+# Environment variables and secrets (EXCLUDED - won't be committed!)
+.env
+.env.local
+.env.production
+
+# IDE folders (EXCLUDED - won't be committed!)
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files (EXCLUDED - won't be committed!)
+.DS_Store
+Thumbs.db
+
+# Testing artifacts (EXCLUDED - won't be committed!)
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Docker logs (EXCLUDED - won't be committed!)
+*.log
+
+# Packaged skill file (EXCLUDED - won't be committed!)
+*.skill
+fastapi-builder.skill
