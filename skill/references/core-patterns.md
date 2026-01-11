@@ -398,6 +398,87 @@ def get_profile(user = Depends(get_current_user)):
     return user
 ```
 
+### Dependency Caching
+
+Control whether dependencies are cached per request or re-evaluated.
+
+```python
+from functools import lru_cache
+
+# Cached across requests - same instance for all requests
+@lru_cache
+def get_config():
+    return Settings(app_name="My API", debug=True)
+
+# Default: same instance per request (within one request)
+def get_db():
+    db = Database()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.get("/users")
+def list_users(db = Depends(get_db)):
+    # db is cached - all endpoints in this request get same instance
+    return db.query_users()
+
+# Disable caching - new instance each time it's used
+def get_no_cache():
+    return Database()
+
+@app.get("/items")
+def get_items(db1 = Depends(get_no_cache, use_cache=False), db2 = Depends(get_no_cache, use_cache=False)):
+    # db1 and db2 are DIFFERENT instances
+    return {"db1_id": id(db1), "db2_id": id(db2)}
+```
+
+**When to use caching:**
+- **Enable (default)**: Database sessions, config, authentication - resources that should be shared within a request
+- **Disable**: When you need multiple independent instances of a dependency
+
+### Testing with Dependency Overrides
+
+Replace dependencies with test doubles during testing.
+
+```python
+# Production code
+def get_config():
+    return Settings(app_name="Production API", debug=False)
+
+def get_logger(config: dict = Depends(get_config)):
+    return logging.getLogger(config["app_name"])
+
+# Test code
+import pytest
+from httpx import AsyncClient, ASGITransport
+from app import app, get_config
+
+def get_test_config():
+    return Settings(app_name="Test API", debug=True)
+
+@pytest_asyncio.fixture
+async def test_client():
+    # Override dependency before test
+    app.dependency_overrides[get_config] = get_test_config
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        yield client
+
+    # Clean up after test
+    app.dependency_overrides.clear()
+
+@pytest.mark.asyncio
+async def test_with_override(test_client):
+    response = await test_client.get("/config")
+    assert response.json()["app_name"] == "Test API"  # Uses override, not real config
+```
+
+**Key points:**
+- `app.dependency_overrides[original] = replacement` - Maps original function to test version
+- Overrides cascade - if `get_logger` depends on `get_config`, overriding `get_config` affects `get_logger` too
+- Always call `app.dependency_overrides.clear()` after tests to prevent pollution
+
 ---
 
 ## Validation

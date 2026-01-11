@@ -349,6 +349,176 @@ Detailed guides for specific topics:
   - Deployments, Services, ConfigMaps
 - Production best practices and checklists
 
+## Code Principles
+
+When generating FastAPI code, always follow these principles:
+
+### 1. Type Hints Everywhere
+Always use explicit type hints for all parameters:
+
+**Path Parameters:**
+```python
+# ✓ GOOD - Explicit type hint
+@app.get("/items/{item_id}")
+async def get_item(item_id: int):
+    return {"id": item_id}
+
+# ✗ BAD - No type hint
+@app.get("/items/{item_id}")
+async def get_item(item_id):
+    return {"id": item_id}
+```
+
+**Query Parameters:**
+```python
+from fastapi import Query
+
+# ✓ GOOD - Type hints with Query validator
+@app.get("/search")
+async def search(
+    query: str = Query(..., min_length=1),
+    limit: int = Query(10, ge=1, le=100)
+):
+    return {"query": query, "limit": limit}
+
+# ✗ BAD - Missing type hints
+@app.get("/search")
+async def search(query, limit=10):
+    return {"query": query, "limit": limit}
+```
+
+**All Parameters Need Types:**
+- Path parameters: `item_id: int`, `username: str`
+- Query parameters: `skip: int = 0`, `limit: int = Query(10)`
+- Request bodies: `item: Item` (Pydantic model)
+- Dependencies: `db: Session = Depends(get_db)`
+- Return types: `-> dict`, `-> List[Item]`
+
+### 2. Always Return Dictionaries
+
+DELETE endpoints must return dictionaries, not None:
+
+```python
+# ✓ GOOD - Returns dictionary
+@app.delete("/items/{item_id}", status_code=200)
+async def delete_item(item_id: int):
+    if item_id not in items_db:
+        raise HTTPException(status_code=404, detail="Item not found")
+    del items_db[item_id]
+    return {"message": "Item deleted successfully", "id": item_id}
+
+# ✗ BAD - Returns None
+@app.delete("/items/{item_id}", status_code=204)
+async def delete_item(item_id: int):
+    if item_id not in items_db:
+        raise HTTPException(status_code=404, detail="Item not found")
+    del items_db[item_id]
+    return None  # ✗ Don't do this
+```
+
+**Status Code Choice:**
+- Use `status_code=200` with response body for deletes
+- Use `status_code=204` only if truly returning no content (rare)
+- **Prefer 200 with confirmation message** for better API clarity
+
+### 3. Descriptive Function Names
+
+Function names should clearly describe what the endpoint does:
+
+```python
+# ✓ GOOD - Clear, descriptive names matching purpose
+@app.get("/items")
+async def list_items():  # Lists all items
+    return items_db
+
+@app.get("/items/{item_id}")
+async def get_item(item_id: int):  # Gets single item
+    return items_db[item_id]
+
+@app.post("/items")
+async def create_item(item: Item):  # Creates new item
+    return created_item
+
+@app.put("/items/{item_id}")
+async def update_item(item_id: int, item: Item):  # Updates existing item
+    return updated_item
+
+@app.delete("/items/{item_id}")
+async def delete_item(item_id: int):  # Deletes item
+    return {"message": "deleted"}
+
+@app.get("/search")
+async def search_items(query: str):  # Searches items
+    return search_results
+
+# ✗ BAD - Generic or misleading names
+@app.get("/items")
+async def endpoint1():  # ✗ Not descriptive
+
+@app.post("/items")
+async def handle_post():  # ✗ Too generic
+
+@app.get("/search")
+async def get_data(q: str):  # ✗ Doesn't indicate search purpose
+```
+
+**Naming Convention:**
+- `list_*` for GET endpoints returning multiple items
+- `get_*` for GET endpoints returning single item
+- `create_*` for POST endpoints
+- `update_*` for PUT/PATCH endpoints
+- `delete_*` or `remove_*` for DELETE endpoints
+- `search_*` for search/query endpoints
+- Use verb + noun pattern: `get_item`, `create_user`, `search_tasks`
+
+### 4. Complete Error Handling
+
+Always validate and provide clear error messages:
+
+```python
+# ✓ GOOD - Comprehensive error handling
+@app.get("/tasks/{task_id}")
+async def get_task(task_id: int):
+    if task_id not in tasks_db:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Task with id {task_id} not found"
+        )
+    return {"id": task_id, **tasks_db[task_id]}
+
+# ✗ BAD - No validation
+@app.get("/tasks/{task_id}")
+async def get_task(task_id: int):
+    return tasks_db[task_id]  # ✗ Will crash if not found
+```
+
+### 5. Response Models
+
+Always specify response_model for type safety and documentation:
+
+```python
+# ✓ GOOD - With response model
+@app.get("/items/{item_id}", response_model=ItemResponse)
+async def get_item(item_id: int):
+    return item
+
+# ✗ BAD - No response model
+@app.get("/items/{item_id}")
+async def get_item(item_id: int):
+    return item
+```
+
+### Summary Checklist
+
+Before considering code complete, verify:
+- [ ] All parameters have explicit type hints
+- [ ] All endpoints return dictionaries (or Pydantic models)
+- [ ] Function names clearly describe endpoint purpose
+- [ ] Error cases are handled with HTTPException
+- [ ] Response models are specified
+- [ ] Query parameters use Query() for validation
+- [ ] Status codes match REST conventions (200, 201, 404, etc.)
+
 ## Tips for Success
 
 ### Use Async When Possible
