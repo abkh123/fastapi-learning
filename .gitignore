@@ -45,3 +45,4 @@ htmlcov/
 # Packaged skill file (EXCLUDED - won't be committed!)
 *.skill
 fastapi-builder.skill
+*.zip
