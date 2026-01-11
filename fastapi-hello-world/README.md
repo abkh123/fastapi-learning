@@ -1,4 +1,4 @@
-# FastAPI Learning Repository
+# Hands-on Skills for FastAPI
 
 A comprehensive learning resource for building FastAPI applications, from hello-world to production-ready APIs with dependency injection and SQLModel database patterns.
 

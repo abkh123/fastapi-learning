@@ -285,6 +285,196 @@ alembic downgrade -1
 
 ---
 
+## SQLModel
+
+SQLModel combines Pydantic and SQLAlchemy for simpler FastAPI databases. Great for learning and small-to-medium applications.
+
+### Installation
+
+```bash
+pip install sqlmodel psycopg2-binary
+# or with uv
+uv add sqlmodel psycopg2-binary
+```
+
+### Database Configuration
+
+**database.py:**
+
+```python
+from sqlmodel import SQLModel, create_engine, Session
+from config import get_settings
+from models import TaskDB  # Import so metadata is registered
+
+settings = get_settings()
+
+# Create engine with connection pooling
+engine = create_engine(
+    settings.database_url,
+    echo=False,
+    # Pool settings for PostgreSQL
+    pool_size=10,           # Number of connections to maintain
+    max_overflow=20,         # Additional connections beyond pool_size
+    pool_pre_ping=True,      # Test connections before using
+    pool_recycle=3600,       # Recycle connections after 1 hour
+)
+
+
+def create_db_and_tables():
+    SQLModel.metadata.create_all(engine)
+
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+```
+
+### Model Separation Pattern
+
+Separate database models from API models for better control:
+
+**models.py:**
+
+```python
+from sqlmodel import SQLModel, Field
+from typing import Optional
+from datetime import datetime, timezone
+
+
+# Database model (table=True)
+class TaskDB(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str = Field(min_length=1, max_length=200)
+    description: Optional[str] = None
+    status: str = Field(default="pending")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# Request: Create (no id, no created_at)
+class TaskCreate(SQLModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: Optional[str] = None
+    status: str = Field(default="pending")
+
+
+# Request: Update (all optional, no id/created_at)
+class TaskUpdate(SQLModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    description: Optional[str] = None
+    status: Optional[str] = None
+
+
+# Response: What clients see
+class TaskPublic(SQLModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    status: str
+    created_at: datetime
+```
+
+### CRUD Operations
+
+**main.py:**
+
+```python
+from typing import List
+from fastapi import FastAPI, Depends, HTTPException
+from sqlmodel import Session, select
+from models import TaskDB, TaskCreate, TaskUpdate, TaskPublic
+from database import get_session
+
+app = FastAPI()
+
+
+# Create
+@app.post("/tasks", status_code=201, response_model=TaskPublic)
+def create_task(task: TaskCreate, session: Session = Depends(get_session)) -> TaskPublic:
+    db_task = TaskDB.model_validate(task)
+    session.add(db_task)
+    session.commit()
+    session.refresh(db_task)
+    return TaskPublic.model_validate(db_task)
+
+
+# Read all
+@app.get("/tasks", response_model=List[TaskPublic])
+def list_tasks(session: Session = Depends(get_session)) -> List[TaskPublic]:
+    tasks = session.exec(select(TaskDB)).all()
+    return [TaskPublic.model_validate(task) for task in tasks]
+
+
+# Read one
+@app.get("/tasks/{task_id}", response_model=TaskPublic)
+def get_task(task_id: int, session: Session = Depends(get_session)) -> TaskPublic:
+    task = session.get(TaskDB, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return TaskPublic.model_validate(task)
+
+
+# Update (partial)
+@app.put("/tasks/{task_id}", response_model=TaskPublic)
+def update_task(
+    task_id: int,
+    task_update: TaskUpdate,
+    session: Session = Depends(get_session)
+) -> TaskPublic:
+    task = session.get(TaskDB, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    update_data = task_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(task, key, value)
+
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return TaskPublic.model_validate(task)
+
+
+# Delete
+@app.delete("/tasks/{task_id}")
+def delete_task(task_id: int, session: Session = Depends(get_session)) -> dict:
+    task = session.get(TaskDB, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    session.delete(task)
+    session.commit()
+    return {"message": "Task deleted successfully", "task_id": task_id}
+```
+
+### Filtering
+
+```python
+from datetime import timedelta, timezone
+
+@app.get("/tasks/by-status/{status}", response_model=List[TaskPublic])
+def filter_by_status(status: str, session: Session = Depends(get_session)):
+    statement = select(TaskDB).where(TaskDB.status == status)
+    tasks = session.exec(statement).all()
+    return [TaskPublic.model_validate(task) for task in tasks]
+
+@app.get("/tasks/recent", response_model=List[TaskPublic])
+def recent_tasks(days: int = 7, session: Session = Depends(get_session)):
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+    statement = select(TaskDB).where(TaskDB.created_at >= cutoff_date)
+    tasks = session.exec(statement).all()
+    return [TaskPublic.model_validate(task) for task in tasks]
+```
+
+### SQLModel vs SQLAlchemy
+
+| Feature | SQLModel | SQLAlchemy 2.0 |
+|---------|---------|----------------|
+| **Best for** | Learning, prototypes, small apps | Production, complex queries |
+| **Code** | Less code, Pydantic integrated | More verbose, separate schemas |
+| **Async** | Requires separate setup | Native async support |
+| **Type hints** | Built-in Pydantic validation | Separate Pydantic schemas needed |
+
+---
+
 ## SQLite
 
 SQLite is great for development and small applications. No server setup required.

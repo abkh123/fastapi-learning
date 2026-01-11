@@ -298,6 +298,7 @@ Detailed guides for specific topics:
 - Request/response models with Pydantic
 - Path, query, and body parameters
 - Dependency injection
+- Environment configuration with pydantic-settings
 - Validation and error handling
 - Response models and status codes
 
@@ -305,8 +306,12 @@ Detailed guides for specific topics:
 📄 **`references/database.md`**
 - **PostgreSQL** (primary focus)
   - SQLAlchemy 2.0 async patterns
+  - SQLModel patterns (simpler, for learning)
   - Connection pooling
   - Session management
+  - Model separation (TaskDB, TaskCreate, TaskUpdate, TaskPublic)
+  - CRUD operations
+  - Filtering queries
   - Alembic migrations
 - **SQLite** for simple projects
 - **MongoDB** with Motor/Beanie

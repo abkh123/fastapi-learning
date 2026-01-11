@@ -481,6 +481,191 @@ async def test_with_override(test_client):
 
 ---
 
+## Environment Configuration
+
+Manage application settings using Pydantic Settings with environment variables and `.env` files.
+
+### Basic Settings Class
+
+```python
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+
+class Settings(BaseSettings):
+    # Application
+    app_name: str = "My API"
+    debug: bool = False
+
+    # Database
+    database_url: str
+
+    # Security
+    secret_key: str
+
+    class Config:
+        env_file = ".env"
+
+@lru_cache
+def get_settings() -> Settings:
+    """Get cached settings instance"""
+    return Settings()
+```
+
+**Use in dependencies:**
+
+```python
+from fastapi import FastAPI, Depends
+from config import Settings, get_settings
+
+app = FastAPI()
+
+@app.get("/config")
+def show_config(settings: Settings = Depends(get_settings)):
+    return {
+        "app_name": settings.app_name,
+        "debug": settings.debug
+    }
+```
+
+### Field Validation
+
+Validate environment variable formats using field validators:
+
+```python
+from pydantic import field_validator
+from pydantic_settings import BaseSettings
+from urllib.parse import urlparse
+
+class Settings(BaseSettings):
+    database_url: str
+    secret_key: str
+
+    @field_validator('database_url')
+    @classmethod
+    def validate_postgres_url(cls, v: str) -> str:
+        parsed = urlparse(v)
+
+        if parsed.scheme not in ('postgresql', 'postgres'):
+            raise ValueError('DATABASE_URL must use postgresql:// or postgres:// scheme')
+
+        if not parsed.hostname:
+            raise ValueError('DATABASE_URL must include a host')
+
+        if not parsed.path or parsed.path == '/':
+            raise ValueError('DATABASE_URL must include a database name')
+
+        return v
+
+    @field_validator('secret_key')
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError('SECRET_KEY must be at least 32 characters')
+        return v
+
+    class Config:
+        env_file = ".env"
+```
+
+### Environment-Specific Configuration
+
+**`.env.example`** (committed to git - template only):
+
+```bash
+# Application
+APP_NAME=My API
+DEBUG=false
+
+# Database
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+
+# Security
+SECRET_KEY=generate-with:openssl rand -hex 32
+```
+
+**`.env`** (NOT committed - development values):
+
+```bash
+APP_NAME=My API
+DEBUG=true
+DATABASE_URL=postgresql://localhost:5432/dev_db
+SECRET_KEY=development-secret-key-local-only
+```
+
+**`.gitignore`**:
+
+```
+.env
+.env.local
+.env.*.local
+*.key
+```
+
+### Development vs Production
+
+| Aspect | Development | Production |
+|--------|-------------|------------|
+| **Config source** | `.env` file | Environment variables |
+| **Debug mode** | `DEBUG=true` | `DEBUG=false` |
+| **Database** | Local PostgreSQL | Managed instance |
+| **Secrets** | Plain text in `.env` | Platform secrets manager |
+
+**On Railway:**
+
+```bash
+railway variables set DEBUG=false
+railway variables set DATABASE_URL=postgresql://...
+railway variables set SECRET_KEY=$(openssl rand -hex 32)
+```
+
+**On Fly.io:**
+
+```bash
+flyctl secrets set DEBUG=false
+flyctl secrets set DATABASE_URL=postgresql://...
+flyctl secrets set SECRET_KEY=$(openssl rand -hex 32)
+```
+
+**Production note**: No `.env` file needed. Platform injects environment variables automatically.
+
+### Multi-Environment Pattern
+
+For multiple environments (dev, staging, production):
+
+```python
+import os
+from enum import Enum
+
+class Environment(str, Enum):
+    DEV = "development"
+    STAGING = "staging"
+    PROD = "production"
+
+class Settings(BaseSettings):
+    environment: Environment = Environment.DEV
+    debug: bool = False
+
+    @property
+    def is_dev(self) -> bool:
+        return self.environment == Environment.DEV
+
+    @property
+    def is_prod(self) -> bool:
+        return self.environment == Environment.PROD
+
+    class Config:
+        env_file = f".env.{os.getenv('ENV', 'development')}"
+```
+
+Then:
+```bash
+ENV=production uvicorn main:app
+```
+
+**Best practice**: Use platform environment variables in production. No `.env` file needed in production deployments.
+
+---
+
 ## Validation
 
 FastAPI automatically validates requests using Pydantic.
